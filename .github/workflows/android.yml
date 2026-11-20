@@ -27,6 +27,9 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Extract project
+        run: unzip -o 3rrood-android-project.zip -d source  
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
