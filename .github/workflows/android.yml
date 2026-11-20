@@ -27,27 +27,18 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-            - name: Extract project
-        run: |
-          unzip -o 3rrood-android-project.zip -d source
-          echo "=== ZIP CONTENTS ==="
-          unzip -l 3rrood-android-project.zip | head -60
-          echo "=== EXTRACTED FILES ==="
-          find source -maxdepth 5 -type f | head -60
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Build APK
         run: |
-          PROJECT_DIR=$(find source -name gradlew -type f -print -quit | sed 's|/gradlew$||')
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: gradlew not found in ZIP"
-            exit 1
-          fi
-          cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          cd source/3rrood-android
+          gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: 3rrood-APK
-          path: source/**/build/outputs/apk/debug/*.apk
+          path: source/3rrood-android/app/build/outputs/apk/debug/*.apk
