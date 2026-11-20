@@ -1,4 +1,3 @@
-
 name: Build 3rrood APK
 
 on:
@@ -10,10 +9,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download Project ZIP
+        run: |
+          curl -fL "https://github.com/ledowalled/3rrood-android/releases/download/upload-test/3rrood-android-project.zip" -o 3rrood-android-project.zip
+          ls -lh 3rrood-android-project.zip
 
       - name: Set up JDK
         uses: actions/setup-java@v4
