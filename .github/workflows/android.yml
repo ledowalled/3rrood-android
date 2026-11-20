@@ -29,17 +29,8 @@ jobs:
 
       - name: Extract project
         run: unzip -o 3rrood-android-project.zip -d source  
-      - name: Fix missing annotation dependency
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("source/3rrood-android/app/build.gradle")
-          s = p.read_text()
-          dep = "implementation 'androidx.annotation:annotation:1.9.1'"
-          if dep not in s:
-              s = s.replace("dependencies {", "dependencies {\n    " + dep, 1)
-          p.write_text(s)
-          Py
+            - name: Fix missing annotation dependency
+        run: sed -i "/dependencies {/a\\    implementation 'androidx.annotation:annotation:1.9.1'" source/3rrood-android/app/build.gradle
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
