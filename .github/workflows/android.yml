@@ -1,3 +1,4 @@
+
 name: Build 3rrood APK
 
 on:
@@ -19,13 +20,24 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+
+      - name: Install Android SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Extract project
+        run: unzip -o 3rrood-android-project.zip -d source
 
       - name: Build APK
         run: |
-          unzip -o 3rrood-android-project.zip -d source
-          cd source
+          PROJECT_DIR=$(find source -name gradlew -type f -print -quit | sed 's|/gradlew$||')
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: gradlew not found in ZIP"
+            exit 1
+          fi
+          cd "$PROJECT_DIR"
           chmod +x gradlew
           ./gradlew assembleDebug
 
