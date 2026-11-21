@@ -297,10 +297,10 @@ public class AmazonPhoneMonitorService extends Service {
 
                 if (initialized && !oldSet.contains(asin)) {
 
-                    Matcher pm = pricePattern.matcher(card.text());
+                    Matcher priceMatcher = pricePattern.matcher(card.text());
 
-                    String price = pm.find()
-                        ? pm.group(1) + " جنيه"
+                    String price = priceMatcher.find()
+                        ? priceMatcher.group(1) + " جنيه"
                         : "السعر ظاهر على Amazon.eg";
 
                     String link =
