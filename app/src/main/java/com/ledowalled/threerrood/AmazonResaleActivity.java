@@ -115,6 +115,7 @@ public class AmazonResaleActivity extends Activity {
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36");
                 connection.setRequestProperty("Accept-Language", "ar-EG,ar;q=0.9,en;q=0.8");
                 connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+      connection.setRequestProperty("Accept-Encoding", "identity");
                 int code = connection.getResponseCode();
                 if (code != 200) throw new Exception("Amazon.eg returned HTTP " + code);
                 String html = readAll(connection.getInputStream());
@@ -139,7 +140,23 @@ public class AmazonResaleActivity extends Activity {
                     String link = "https://www.amazon.eg/dp/" + asin;
                     products.add(new Product(asin, name, priceText, um.group(1), image, link));
                 }
-                if (cards.isEmpty()) throw new Exception("لم يتم العثور على بطاقات المنتجات في استجابة Amazon.eg. راجع اتصال الصفحة أو تغيّر بنيتها.");
+                if (cards.isEmpty()) {
+            Elements allComponents = doc.getElementsByAttribute("data-component-type");
+            Elements asinElements = doc.getElementsByAttribute("data-asin");
+            String preview = doc.body() == null ? "" : doc.body().text();
+            if (preview.length() > 180) preview = preview.substring(0, 180);
+            String diagnostic = "تشخيص Amazon | HTTP=" + code
+                    + " | URL=" + connection.getURL()
+                    + " | Type=" + connection.getContentType()
+                    + " | Encoding=" + connection.getContentEncoding()
+                    + " | Bytes=" + html.length()
+                    + " | Title=" + doc.title()
+                    + " | components=" + allComponents.size()
+                    + " | ASIN=" + asinElements.size()
+                    + " | preview=" + preview;
+            android.util.Log.e("AmazonResale", diagnostic);
+            throw new Exception(diagnostic);
+        }
             } catch (Exception e) { error = e.getMessage() == null ? "تعذر تحميل المنتجات" : e.getMessage(); }
             finally { if (connection != null) connection.disconnect(); }
             final String finalError = error;
