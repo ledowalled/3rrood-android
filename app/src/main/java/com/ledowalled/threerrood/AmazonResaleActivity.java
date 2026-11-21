@@ -9,11 +9,14 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,8 +29,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -37,172 +40,559 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class AmazonResaleActivity extends Activity {
-    private static final String SEARCH = "https://www.amazon.eg/s?i=warehouse-deals&srs=27972173031&s=popularity-rank&fs=true&ref=lp_27972173031_sar&page=";
+
+    private static final String BASE =
+            "https://www.amazon.eg/s?i=warehouse-deals&srs=27972173031&s=";
+
     private final ExecutorService worker = Executors.newFixedThreadPool(4);
     private final Set<String> seen = new HashSet<>();
+
     private LinearLayout list;
     private ProgressBar progress;
     private TextView status;
     private Button moreButton;
+    private Spinner sortSpinner;
+    private Spinner countSpinner;
+
     private int page = 1;
+    private int batchSize = 30;
+    private String sortMode = "date-desc-rank";
     private boolean loading = false;
 
-    @Override public void onCreate(Bundle state) {
+    @Override
+    public void onCreate(Bundle state) {
         super.onCreate(state);
+
         getWindow().setStatusBarColor(Color.WHITE);
         getWindow().setNavigationBarColor(Color.WHITE);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        );
+
         buildUi();
         loadPage(false);
     }
 
-    private int dp(float n) { return (int)(n * getResources().getDisplayMetrics().density + .5f); }
-    private GradientDrawable bg(int color, int radius) {
-        GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d;
+    private int dp(float n) {
+        return (int) (n * getResources().getDisplayMetrics().density + .5f);
     }
+
+    private GradientDrawable bg(int color, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radius));
+        return d;
+    }
+
     private TextView text(String value, int size, int color, boolean bold) {
-        TextView t = new TextView(this); t.setText(value); t.setTextSize(size); t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); return t;
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return t;
+    }
+
+    private Spinner makeSpinner(String[] values) {
+        Spinner s = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                this,
+                android.R.layout.simple_spinner_item,
+                values
+        );
+        adapter.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item
+        );
+        s.setAdapter(adapter);
+        return s;
+    }
+
+    private void resetAndLoad() {
+        if (loading) return;
+        page = 1;
+        seen.clear();
+        list.removeAllViews();
+        moreButton.setText("تحميل المزيد من المنتجات");
+        moreButton.setEnabled(true);
+        loadPage(false);
     }
 
     private void buildUi() {
-        LinearLayout pageRoot = new LinearLayout(this);
-        pageRoot.setOrientation(LinearLayout.VERTICAL);
-        pageRoot.setBackgroundColor(Color.rgb(246, 246, 249));
-        pageRoot.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(246, 246, 249));
+        root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(16), dp(14), dp(16), dp(14));
         header.setBackgroundColor(Color.rgb(112, 38, 185));
-        TextView title = text("Amazon Resale مصر", 21, Color.WHITE, true);
-        header.addView(title);
-        TextView subtitle = text("منتجات بعروض مستعملة من Amazon.eg", 13, Color.WHITE, false);
-        subtitle.setAlpha(.9f); LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1, -2); sp.topMargin=dp(5); header.addView(subtitle, sp);
-        pageRoot.addView(header);
 
-        LinearLayout tools = new LinearLayout(this); tools.setGravity(Gravity.CENTER_VERTICAL); tools.setPadding(dp(12), dp(8), dp(12), dp(8));
-        Button refresh = new Button(this); refresh.setText("تحديث"); refresh.setAllCaps(false); refresh.setOnClickListener(v -> { page=1; seen.clear(); list.removeAllViews(); loadPage(false); });
+        header.addView(text("Amazon Resale مصر", 21, Color.WHITE, true));
+
+        TextView subtitle = text(
+                "منتجات بعروض مستعملة من Amazon.eg",
+                13, Color.WHITE, false
+        );
+        subtitle.setAlpha(.9f);
+        LinearLayout.LayoutParams subParams =
+                new LinearLayout.LayoutParams(-1, -2);
+        subParams.topMargin = dp(5);
+        header.addView(subtitle, subParams);
+        root.addView(header);
+
+        LinearLayout tools = new LinearLayout(this);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        tools.setPadding(dp(8), dp(6), dp(8), dp(6));
+
+        Button refresh = new Button(this);
+        refresh.setText("تحديث");
+        refresh.setAllCaps(false);
+        refresh.setOnClickListener(v -> resetAndLoad());
         tools.addView(refresh, new LinearLayout.LayoutParams(-2, dp(44)));
-        status = text("يتم تحميل المنتجات...", 13, Color.DKGRAY, false);
-        LinearLayout.LayoutParams stp = new LinearLayout.LayoutParams(0, -2, 1); stp.setMargins(dp(10),0,0,0); tools.addView(status, stp);
-        pageRoot.addView(tools);
-        progress = new ProgressBar(this); progress.setIndeterminate(true); pageRoot.addView(progress);
 
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
-        list = new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); list.setPadding(dp(10), dp(4), dp(10), dp(12));
-        scroll.addView(list); pageRoot.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        moreButton = new Button(this); moreButton.setText("تحميل المزيد من المنتجات"); moreButton.setAllCaps(false); moreButton.setOnClickListener(v -> loadPage(true));
-        pageRoot.addView(moreButton, new LinearLayout.LayoutParams(-1, dp(52)));
-        setContentView(pageRoot);
+        status = text("يتم تحميل المنتجات...", 12, Color.DKGRAY, false);
+        LinearLayout.LayoutParams statusParams =
+                new LinearLayout.LayoutParams(0, -2, 1);
+        statusParams.setMargins(dp(7), 0, dp(7), 0);
+        tools.addView(status, statusParams);
+        root.addView(tools);
+
+        LinearLayout filters = new LinearLayout(this);
+        filters.setGravity(Gravity.CENTER_VERTICAL);
+        filters.setPadding(dp(8), dp(2), dp(8), dp(8));
+
+        TextView sortLabel = text("الترتيب:", 12, Color.DKGRAY, true);
+        filters.addView(sortLabel);
+
+        sortSpinner = makeSpinner(new String[]{
+                "الأحدث نزولًا",
+                "السعر: الأقل للأعلى",
+                "السعر: الأعلى للأقل"
+        });
+        sortSpinner.setSelection(0);
+        filters.addView(sortSpinner,
+                new LinearLayout.LayoutParams(0, dp(48), 1));
+
+        TextView countLabel = text("العدد:", 12, Color.DKGRAY, true);
+        filters.addView(countLabel);
+
+        countSpinner = makeSpinner(new String[]{"30 منتج", "50 منتج"});
+        countSpinner.setSelection(0);
+        filters.addView(countSpinner,
+                new LinearLayout.LayoutParams(dp(112), dp(48)));
+
+        root.addView(filters);
+
+        sortSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                String newMode;
+                if (position == 1) newMode = "price-asc-rank";
+                else if (position == 2) newMode = "price-desc-rank";
+                else newMode = "date-desc-rank";
+
+                if (!newMode.equals(sortMode)) {
+                    sortMode = newMode;
+                    resetAndLoad();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) { }
+        });
+
+        countSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view,
+                                       int position, long id) {
+                int newSize = position == 1 ? 50 : 30;
+                if (newSize != batchSize) {
+                    batchSize = newSize;
+                    resetAndLoad();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) { }
+        });
+
+        progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        root.addView(progress);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+
+        list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(10), dp(4), dp(10), dp(12));
+
+        scroll.addView(list);
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        moreButton = new Button(this);
+        moreButton.setText("تحميل المزيد من المنتجات");
+        moreButton.setAllCaps(false);
+        moreButton.setOnClickListener(v -> loadPage(true));
+        root.addView(moreButton, new LinearLayout.LayoutParams(-1, dp(52)));
+
+        setContentView(root);
     }
 
     private void loadPage(boolean next) {
         if (loading) return;
-        if (next) page++;
-        loading = true; progress.setVisibility(View.VISIBLE); moreButton.setEnabled(false);
-        status.setText("جاري الاتصال بـ Amazon.eg — الصفحة " + page);
-        final int requestedPage = page;
+
+        loading = true;
+        progress.setVisibility(View.VISIBLE);
+        moreButton.setEnabled(false);
+
+        final int firstPage = page;
+        final int targetCount = batchSize;
+        final String selectedSort = sortMode;
+
+        status.setText("جاري تحميل " + targetCount + " منتج من Amazon.eg...");
+
         worker.execute(() -> {
             ArrayList<Product> products = new ArrayList<>();
             String error = null;
-            HttpURLConnection connection = null;
-            try {
-                URL url = new URL(SEARCH + requestedPage);
-                connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(18000); connection.setReadTimeout(22000);
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36");
-                connection.setRequestProperty("Accept-Language", "ar-EG,ar;q=0.9,en;q=0.8");
-                connection.setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-      connection.setRequestProperty("Accept-Encoding", "identity");
-                int code = connection.getResponseCode();
-                if (code != 200) throw new Exception("Amazon.eg returned HTTP " + code);
-                String html = readAll(connection.getInputStream());
-                String low = html.toLowerCase(Locale.ROOT);
-                if (low.contains("captcha") || low.contains("validatecaptcha")) throw new Exception("Amazon.eg طلب التحقق من المتصفح. حاول لاحقًا من غير تكرار الطلبات.");
-                Document doc = Jsoup.parse(html);
-                Elements cards = doc.getElementsByAttributeValue("data-component-type", "s-search-result");
-                Pattern used = Pattern.compile("(\\d+)\\s*(?:العروض المستخدمة|عرض مستخدم)");
-                Pattern price = Pattern.compile("([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s*(?:جنيه|EGP)");
-                for (Element card : cards) {
-                    String asin = card.attr("data-asin").trim();
-                    if (asin.isEmpty() || seen.contains(asin)) continue;
-                    String cardText = card.text();
-                    Matcher um = used.matcher(cardText);
-                    if (!um.find()) continue; // Only show listings with an explicit used-offer marker.
-                    Matcher pm = price.matcher(cardText);
-                    String priceText = pm.find() ? pm.group(1) + " جنيه" : "السعر ظاهر في Amazon.eg";
-                    Element h = card.selectFirst("h2 span");
-                    String name = h == null ? "منتج Amazon" : h.text().trim();
-                    Element img = card.selectFirst("img.s-image");
-                    String image = img == null ? "" : img.attr("src");
-                    String link = "https://www.amazon.eg/dp/" + asin;
-                    products.add(new Product(asin, name, priceText, um.group(1), image, link));
+            int currentPage = firstPage;
+            boolean reachedEnd = false;
+            int pagesRead = 0;
+
+            Pattern used = Pattern.compile(
+                    "(\\d+)\\s*(?:العروض المستخدمة|عرض مستخدم)"
+            );
+            Pattern pricePattern = Pattern.compile(
+                    "([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s*(?:جنيه|EGP)"
+            );
+
+            while (products.size() < targetCount && pagesRead < 12) {
+                HttpURLConnection connection = null;
+
+                try {
+                    String address = BASE + selectedSort
+                            + "&fs=true&ref=lp_27972173031_sar&page="
+                            + currentPage;
+
+                    connection = (HttpURLConnection)
+                            new URL(address).openConnection();
+
+                    connection.setRequestMethod("GET");
+                    connection.setConnectTimeout(18000);
+                    connection.setReadTimeout(22000);
+                    connection.setInstanceFollowRedirects(true);
+
+                    connection.setRequestProperty(
+                            "User-Agent",
+                            "Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 Chrome/130.0.0.0 Mobile Safari/537.36"
+                    );
+                    connection.setRequestProperty(
+                            "Accept-Language", "ar-EG,ar;q=0.9,en;q=0.8"
+                    );
+                    connection.setRequestProperty(
+                            "Accept",
+                            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    );
+                    connection.setRequestProperty("Accept-Encoding", "identity");
+
+                    int code = connection.getResponseCode();
+
+                    if (code != 200) {
+                        throw new Exception("Amazon.eg returned HTTP " + code);
+                    }
+
+                    String html = readAll(connection.getInputStream());
+                    String low = html.toLowerCase(Locale.ROOT);
+
+                    if (low.contains("captcha") ||
+                            low.contains("validatecaptcha")) {
+                        throw new Exception(
+                                "Amazon.eg طلب التحقق من المتصفح. حاول لاحقًا."
+                        );
+                    }
+
+                    Document doc = Jsoup.parse(html);
+                    Elements cards = doc.select(
+                            "div[data-component-type=s-search-result][data-asin]"
+                    );
+
+                    if (cards.isEmpty()) {
+                        Elements components =
+                                doc.getElementsByAttribute("data-component-type");
+                        Elements asins =
+                                doc.getElementsByAttribute("data-asin");
+
+                        throw new Exception(
+                                "لم يتم العثور على بطاقات المنتجات في Amazon.eg"
+                                + " | HTTP=" + code
+                                + " | components=" + components.size()
+                                + " | ASIN=" + asins.size()
+                                + " | Title=" + doc.title()
+                        );
+                    }
+
+                    int addedThisPage = 0;
+
+                    for (Element card : cards) {
+                        if (products.size() >= targetCount) break;
+
+                        String asin = card.attr("data-asin").trim();
+
+                        if (asin.isEmpty() || seen.contains(asin)) continue;
+
+                        String cardText = card.text();
+                        Matcher usedMatcher = used.matcher(cardText);
+
+                        if (!usedMatcher.find()) continue;
+
+                        Matcher priceMatcher =
+                                pricePattern.matcher(cardText);
+
+                        String priceText = "السعر ظاهر في Amazon.eg";
+                        double numericPrice = Double.MAX_VALUE;
+
+                        if (priceMatcher.find()) {
+                            String raw = priceMatcher.group(1);
+                            priceText = raw + " جنيه";
+                            try {
+                                numericPrice = Double.parseDouble(
+                                        raw.replace(",", "")
+                                );
+                            } catch (Exception ignored) { }
+                        }
+
+                        Element heading = card.selectFirst("h2 span");
+                        String name = heading == null
+                                ? "منتج Amazon"
+                                : heading.text().trim();
+
+                        Element imageElement =
+                                card.selectFirst("img.s-image");
+
+                        String image = imageElement == null
+                                ? ""
+                                : imageElement.attr("src");
+
+                        String link = "https://www.amazon.eg/dp/" + asin;
+
+                        seen.add(asin);
+                        products.add(new Product(
+                                asin, name, priceText,
+                                usedMatcher.group(1),
+                                image, link, numericPrice
+                        ));
+
+                        addedThisPage++;
+                    }
+
+                    currentPage++;
+                    pagesRead++;
+
+                    if (cards.isEmpty() || addedThisPage == 0 &&
+                            cards.size() < 14) {
+                        reachedEnd = true;
+                        break;
+                    }
+
+                } catch (Exception e) {
+                    error = e.getMessage() == null
+                            ? "تعذر تحميل المنتجات"
+                            : e.getMessage();
+                    break;
+                } finally {
+                    if (connection != null) connection.disconnect();
                 }
-                if (cards.isEmpty()) {
-            Elements allComponents = doc.getElementsByAttribute("data-component-type");
-            Elements asinElements = doc.getElementsByAttribute("data-asin");
-            String preview = doc.body() == null ? "" : doc.body().text();
-            if (preview.length() > 180) preview = preview.substring(0, 180);
-            String diagnostic = "تشخيص Amazon | HTTP=" + code
-                    + " | URL=" + connection.getURL()
-                    + " | Type=" + connection.getContentType()
-                    + " | Encoding=" + connection.getContentEncoding()
-                    + " | Bytes=" + html.length()
-                    + " | Title=" + doc.title()
-                    + " | components=" + allComponents.size()
-                    + " | ASIN=" + asinElements.size()
-                    + " | preview=" + preview;
-            android.util.Log.e("AmazonResale", diagnostic);
-            throw new Exception(diagnostic);
-        }
-            } catch (Exception e) { error = e.getMessage() == null ? "تعذر تحميل المنتجات" : e.getMessage(); }
-            finally { if (connection != null) connection.disconnect(); }
-            final String finalError = error;
+            }
+
+            if ("price-asc-rank".equals(selectedSort)) {
+                Collections.sort(products,
+                        (a, b) -> Double.compare(a.numericPrice, b.numericPrice));
+            } else if ("price-desc-rank".equals(selectedSort)) {
+                Collections.sort(products,
+                        (a, b) -> Double.compare(b.numericPrice, a.numericPrice));
+            }
+
+            final BatchResult result = new BatchResult(
+                    products, error, currentPage, reachedEnd
+            );
+
             runOnUiThread(() -> {
-                loading = false; progress.setVisibility(View.GONE); moreButton.setEnabled(true);
-                if (finalError != null) {
-                    status.setText(finalError);
-                    Toast.makeText(this, finalError, Toast.LENGTH_LONG).show();
-                    if (requestedPage > 1) page--;
-                    return;
+                loading = false;
+                progress.setVisibility(View.GONE);
+                page = result.nextPage;
+
+                for (Product product : result.products) {
+                    addProduct(product);
                 }
-                for (Product product : products) { if (seen.add(product.asin)) addProduct(product); }
-                status.setText("تم عرض " + seen.size() + " منتجًا مؤكدًا بعروض مستعملة");
-                if (products.isEmpty()) status.setText("لا توجد منتجات جديدة مؤكدة في هذه الصفحة");
+
+                if (result.error != null) {
+                    status.setText("تم تحميل " + seen.size()
+                            + " منتج. " + result.error);
+                    Toast.makeText(this, result.error,
+                            Toast.LENGTH_LONG).show();
+                    moreButton.setEnabled(true);
+                } else {
+                    status.setText("إجمالي المنتجات المعروضة: "
+                            + seen.size());
+
+                    if (result.end) {
+                        moreButton.setText("وصلت لنهاية النتائج");
+                        moreButton.setEnabled(false);
+                    } else {
+                        moreButton.setText("تحميل المزيد من المنتجات");
+                        moreButton.setEnabled(true);
+                    }
+
+                    if (result.products.isEmpty()) {
+                        status.setText("لم يتم العثور على منتجات جديدة مؤكدة");
+                    }
+                }
             });
         });
     }
 
     private String readAll(InputStream in) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] b = new byte[8192]; int n;
-        while ((n=in.read(b))!=-1) out.write(b,0,n); in.close(); return out.toString("UTF-8");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int n;
+
+        while ((n = in.read(buffer)) != -1) {
+            out.write(buffer, 0, n);
+        }
+
+        in.close();
+        return out.toString("UTF-8");
     }
 
     private void addProduct(Product p) {
-        LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.HORIZONTAL); card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(10), dp(10), dp(10), dp(10)); card.setBackground(bg(Color.WHITE, 12));
-        card.setElevation(dp(2)); LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, -2); cp.bottomMargin=dp(9); list.addView(card, cp);
-        ImageView image = new ImageView(this); image.setScaleType(ImageView.ScaleType.FIT_CENTER); image.setBackground(bg(Color.rgb(248,248,248),8));
-        LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(108), dp(108)); ip.setMargins(0,0,dp(10),0); card.addView(image, ip);
-        LinearLayout info = new LinearLayout(this); info.setOrientation(LinearLayout.VERTICAL); card.addView(info, new LinearLayout.LayoutParams(0,-2,1));
-        TextView name = text(p.name, 14, Color.rgb(40,40,40), true); name.setMaxLines(3); info.addView(name);
-        TextView price = text(p.price, 16, Color.rgb(112,38,185), true); LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,-2); pp.topMargin=dp(7); info.addView(price,pp);
-        TextView offers = text(p.offers + " عرض مستعمل", 12, Color.rgb(35,125,75), false); LinearLayout.LayoutParams op=new LinearLayout.LayoutParams(-1,-2); op.topMargin=dp(4); info.addView(offers,op);
-        Button open = new Button(this); open.setText("عرض المنتج على أمازون"); open.setAllCaps(false); open.setOnClickListener(v -> { try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(p.url))); } catch(Exception e) { Toast.makeText(this,"تعذر فتح المنتج",Toast.LENGTH_SHORT).show(); } });
-        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(42)); bp.topMargin=dp(5); info.addView(open,bp);
-        if (!p.image.isEmpty()) worker.execute(() -> {
-            try { HttpURLConnection c=(HttpURLConnection)new URL(p.image).openConnection(); c.setConnectTimeout(10000); c.setReadTimeout(12000); c.setRequestProperty("User-Agent","Mozilla/5.0"); final android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeStream(c.getInputStream()); c.disconnect();
-                runOnUiThread(() -> image.setImageBitmap(bitmap));
-            } catch(Exception ignored) { }
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(10), dp(10), dp(10), dp(10));
+        card.setBackground(bg(Color.WHITE, 12));
+        card.setElevation(dp(2));
+
+        LinearLayout.LayoutParams cardParams =
+                new LinearLayout.LayoutParams(-1, -2);
+        cardParams.bottomMargin = dp(9);
+        list.addView(card, cardParams);
+
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setBackground(bg(Color.rgb(248, 248, 248), 8));
+
+        LinearLayout.LayoutParams imageParams =
+                new LinearLayout.LayoutParams(dp(108), dp(108));
+        imageParams.setMargins(0, 0, dp(10), 0);
+        card.addView(image, imageParams);
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        card.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView name = text(
+                p.name, 14, Color.rgb(40, 40, 40), true
+        );
+        name.setMaxLines(3);
+        info.addView(name);
+
+        TextView price = text(
+                p.price, 16, Color.rgb(112, 38, 185), true
+        );
+        LinearLayout.LayoutParams priceParams =
+                new LinearLayout.LayoutParams(-1, -2);
+        priceParams.topMargin = dp(7);
+        info.addView(price, priceParams);
+
+        TextView offers = text(
+                p.offers + " عرض مستعمل",
+                12, Color.rgb(35, 125, 75), false
+        );
+        LinearLayout.LayoutParams offersParams =
+                new LinearLayout.LayoutParams(-1, -2);
+        offersParams.topMargin = dp(4);
+        info.addView(offers, offersParams);
+
+        Button open = new Button(this);
+        open.setText("عرض المنتج على أمازون");
+        open.setAllCaps(false);
+        open.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(
+                        Intent.ACTION_VIEW, Uri.parse(p.url)
+                ));
+            } catch (Exception e) {
+                Toast.makeText(this, "تعذر فتح المنتج",
+                        Toast.LENGTH_SHORT).show();
+            }
         });
+
+        LinearLayout.LayoutParams buttonParams =
+                new LinearLayout.LayoutParams(-1, dp(42));
+        buttonParams.topMargin = dp(5);
+        info.addView(open, buttonParams);
+
+        if (!p.image.isEmpty()) {
+            worker.execute(() -> {
+                HttpURLConnection c = null;
+                try {
+                    c = (HttpURLConnection)
+                            new URL(p.image).openConnection();
+                    c.setConnectTimeout(10000);
+                    c.setReadTimeout(12000);
+                    c.setRequestProperty("User-Agent", "Mozilla/5.0");
+
+                    final android.graphics.Bitmap bitmap =
+                            android.graphics.BitmapFactory.decodeStream(
+                                    c.getInputStream()
+                            );
+
+                    if (bitmap != null) {
+                        runOnUiThread(() -> image.setImageBitmap(bitmap));
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (c != null) c.disconnect();
+                }
+            });
+        }
     }
 
-    @Override public void onDestroy() { super.onDestroy(); worker.shutdownNow(); }
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        worker.shutdownNow();
+    }
 
     private static class Product {
-        final String asin,name,price,offers,image,url;
-        Product(String a,String n,String p,String o,String i,String u) { asin=a;name=n;price=p;offers=o;image=i;url=u; }
+        final String asin, name, price, offers, image, url;
+        final double numericPrice;
+
+        Product(String a, String n, String p, String o,
+                String i, String u, double value) {
+            asin = a;
+            name = n;
+            price = p;
+            offers = o;
+            image = i;
+            url = u;
+            numericPrice = value;
+        }
+    }
+
+    private static class BatchResult {
+        final ArrayList<Product> products;
+        final String error;
+        final int nextPage;
+        final boolean end;
+
+        BatchResult(ArrayList<Product> p, String e, int n, boolean finished) {
+            products = p;
+            error = e;
+            nextPage = n;
+            end = finished;
+        }
     }
 }
