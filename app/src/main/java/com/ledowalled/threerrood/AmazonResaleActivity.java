@@ -1,5 +1,9 @@
 package com.ledowalled.threerrood;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
+
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
@@ -71,7 +75,64 @@ public class AmazonResaleActivity extends Activity {
         );
 
         buildUi();
+        startPhoneMonitorWithPermission();
         loadPage(false);
+    }
+
+    private void startPhoneMonitorWithPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                910
+            );
+        } else {
+            startPhoneMonitorService();
+        }
+    }
+
+    private void startPhoneMonitorService() {
+        try {
+            Intent service = new Intent(
+                this, AmazonPhoneMonitorService.class
+            );
+
+            if (Build.VERSION.SDK_INT >= 26) {
+                startForegroundService(service);
+            } else {
+                startService(service);
+            }
+        } catch (Exception e) {
+            android.widget.Toast.makeText(
+                this,
+                "تعذر تشغيل مراقبة الهواتف: " + e.getMessage(),
+                android.widget.Toast.LENGTH_LONG
+            ).show();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(
+        int requestCode, String[] permissions, int[] grantResults
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode, permissions, grantResults
+        );
+
+        if (requestCode == 910) {
+            startPhoneMonitorService();
+
+            if (grantResults.length == 0 ||
+                grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+                android.widget.Toast.makeText(
+                    this,
+                    "فعّل إذن الإشعارات حتى تصلك تنبيهات الهواتف الجديدة.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show();
+            }
+        }
     }
 
     private int dp(float n) {
