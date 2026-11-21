@@ -121,7 +121,7 @@ public class AmazonResaleActivity extends Activity {
                 String low = html.toLowerCase(Locale.ROOT);
                 if (low.contains("captcha") || low.contains("validatecaptcha")) throw new Exception("Amazon.eg طلب التحقق من المتصفح. حاول لاحقًا من غير تكرار الطلبات.");
                 Document doc = Jsoup.parse(html);
-                Elements cards = doc.select("div[data-component-type=s-search-result][data-asin]");
+                Elements cards = doc.getElementsByAttributeValue("data-component-type", "s-search-result");
                 Pattern used = Pattern.compile("(\\d+)\\s*(?:العروض المستخدمة|عرض مستخدم)");
                 Pattern price = Pattern.compile("([0-9][0-9,]*(?:\\.[0-9]{1,2})?)\\s*(?:جنيه|EGP)");
                 for (Element card : cards) {
@@ -139,7 +139,7 @@ public class AmazonResaleActivity extends Activity {
                     String link = "https://www.amazon.eg/dp/" + asin;
                     products.add(new Product(asin, name, priceText, um.group(1), image, link));
                 }
-                if (cards.isEmpty()) throw new Exception("لم أتمكن من قراءة بطاقات المنتجات. قد تكون صفحة Amazon.eg تغيرت أو تطلب تحققًا.");
+                if (cards.isEmpty()) throw new Exception("لم يتم العثور على بطاقات المنتجات في استجابة Amazon.eg. راجع اتصال الصفحة أو تغيّر بنيتها.");
             } catch (Exception e) { error = e.getMessage() == null ? "تعذر تحميل المنتجات" : e.getMessage(); }
             finally { if (connection != null) connection.disconnect(); }
             final String finalError = error;
