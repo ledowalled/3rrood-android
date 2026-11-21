@@ -13,6 +13,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.GridLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -47,7 +48,7 @@ public class AmazonResaleActivity extends Activity {
     private final ExecutorService worker = Executors.newFixedThreadPool(4);
     private final Set<String> seen = new HashSet<>();
 
-    private LinearLayout list;
+    private GridLayout list;
     private ProgressBar progress;
     private TextView status;
     private Button moreButton;
@@ -56,7 +57,7 @@ public class AmazonResaleActivity extends Activity {
 
     private int page = 1;
     private int batchSize = 30;
-    private String sortMode = "date-desc-rank";
+    private String sortMode = "featured-rank";
     private boolean loading = false;
 
     @Override
@@ -166,6 +167,7 @@ public class AmazonResaleActivity extends Activity {
         filters.addView(sortLabel);
 
         sortSpinner = makeSpinner(new String[]{
+                "مميز",
                 "الأحدث نزولًا",
                 "السعر: الأقل للأعلى",
                 "السعر: الأعلى للأقل"
@@ -189,9 +191,10 @@ public class AmazonResaleActivity extends Activity {
             public void onItemSelected(AdapterView<?> parent, View view,
                                        int position, long id) {
                 String newMode;
-                if (position == 1) newMode = "price-asc-rank";
-                else if (position == 2) newMode = "price-desc-rank";
-                else newMode = "date-desc-rank";
+                if (position == 1) newMode = "date-desc-rank";
+                else if (position == 2) newMode = "price-asc-rank";
+                else if (position == 3) newMode = "price-desc-rank";
+                else newMode = "featured-rank";
 
                 if (!newMode.equals(sortMode)) {
                     sortMode = newMode;
@@ -225,9 +228,10 @@ public class AmazonResaleActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
 
-        list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(10), dp(4), dp(10), dp(12));
+        list = new GridLayout(this);
+        list.setColumnCount(2);
+        list.setUseDefaultMargins(false);
+        list.setPadding(dp(5), dp(5), dp(5), dp(10));
 
         scroll.addView(list);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -468,15 +472,17 @@ public class AmazonResaleActivity extends Activity {
 
     private void addProduct(Product p) {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(10), dp(10), dp(10), dp(10));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(7), dp(7), dp(7), dp(7));
         card.setBackground(bg(Color.WHITE, 12));
         card.setElevation(dp(2));
 
-        LinearLayout.LayoutParams cardParams =
-                new LinearLayout.LayoutParams(-1, -2);
-        cardParams.bottomMargin = dp(9);
+        GridLayout.LayoutParams cardParams = new GridLayout.LayoutParams();
+        cardParams.width = 0;
+        cardParams.height = dp(226);
+        cardParams.columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f);
+        cardParams.setMargins(dp(4), dp(4), dp(4), dp(4));
         list.addView(card, cardParams);
 
         ImageView image = new ImageView(this);
@@ -484,40 +490,42 @@ public class AmazonResaleActivity extends Activity {
         image.setBackground(bg(Color.rgb(248, 248, 248), 8));
 
         LinearLayout.LayoutParams imageParams =
-                new LinearLayout.LayoutParams(dp(108), dp(108));
-        imageParams.setMargins(0, 0, dp(10), 0);
+                new LinearLayout.LayoutParams(-1, dp(105));
         card.addView(image, imageParams);
 
-        LinearLayout info = new LinearLayout(this);
-        info.setOrientation(LinearLayout.VERTICAL);
-        card.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
-
         TextView name = text(
-                p.name, 14, Color.rgb(40, 40, 40), true
+                p.name, 12, Color.rgb(40, 40, 40), true
         );
-        name.setMaxLines(3);
-        info.addView(name);
+        name.setMaxLines(2);
+        name.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams nameParams =
+                new LinearLayout.LayoutParams(-1, 0, 1f);
+        nameParams.topMargin = dp(4);
+        card.addView(name, nameParams);
 
         TextView price = text(
-                p.price, 16, Color.rgb(112, 38, 185), true
+                p.price, 14, Color.rgb(112, 38, 185), true
         );
-        LinearLayout.LayoutParams priceParams =
-                new LinearLayout.LayoutParams(-1, -2);
-        priceParams.topMargin = dp(7);
-        info.addView(price, priceParams);
+        price.setGravity(Gravity.CENTER);
+        card.addView(price, new LinearLayout.LayoutParams(-1, -2));
 
         TextView offers = text(
                 p.offers + " عرض مستعمل",
-                12, Color.rgb(35, 125, 75), false
+                10, Color.rgb(35, 125, 75), false
         );
+        offers.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams offersParams =
                 new LinearLayout.LayoutParams(-1, -2);
-        offersParams.topMargin = dp(4);
-        info.addView(offers, offersParams);
+        offersParams.topMargin = dp(2);
+        card.addView(offers, offersParams);
 
         Button open = new Button(this);
-        open.setText("عرض المنتج على أمازون");
+        open.setText("عرض المنتج");
+        open.setTextSize(11);
         open.setAllCaps(false);
+        open.setMinHeight(0);
+        open.setMinimumHeight(0);
+        open.setPadding(dp(3), 0, dp(3), 0);
         open.setOnClickListener(v -> {
             try {
                 startActivity(new Intent(
@@ -530,9 +538,9 @@ public class AmazonResaleActivity extends Activity {
         });
 
         LinearLayout.LayoutParams buttonParams =
-                new LinearLayout.LayoutParams(-1, dp(42));
-        buttonParams.topMargin = dp(5);
-        info.addView(open, buttonParams);
+                new LinearLayout.LayoutParams(-1, dp(36));
+        buttonParams.topMargin = dp(3);
+        card.addView(open, buttonParams);
 
         if (!p.image.isEmpty()) {
             worker.execute(() -> {
